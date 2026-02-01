@@ -1,99 +1,53 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
-	"strconv"
-	"strings"
+
+	"go-crud/database"
+	"go-crud/handlers"
+	"go-crud/repositories"
+	"go-crud/services"
+
+	"github.com/spf13/viper"
 )
 
-type Category struct {
-	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
-var categories = []Category{
-	{ID: 1, Name: "Elektronik", Description: "Gadget dan alat listrik"},
-	{ID: 2, Name: "Pakaian", Description: "Baju, celana, dan aksesoris"},
-}
-
-func handleCategories(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method == "GET" {
-		json.NewEncoder(w).Encode(categories)
-	} else if r.Method == "POST" {
-		var newCategory Category
-		if err := json.NewDecoder(r.Body).Decode(&newCategory); err != nil {
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			return
-		}
-
-		newCategory.ID = len(categories) + 1
-		categories = append(categories, newCategory)
-
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(newCategory)
-	} else {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func handleCategoryByID(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	idStr := strings.TrimPrefix(r.URL.Path, "/categories/")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "Invalid Category ID", http.StatusBadRequest)
-		return
-	}
-
-	index := -1
-	for i, c := range categories {
-		if c.ID == id {
-			index = i
-			break
-		}
-	}
-
-	if index == -1 {
-		http.Error(w, "Category not found", http.StatusNotFound)
-		return
-	}
-
-	switch r.Method {
-	case "GET":
-		json.NewEncoder(w).Encode(categories[index])
-
-	case "PUT":
-		var updateData Category
-		if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			return
-		}
-
-		updateData.ID = id
-		categories[index] = updateData
-		json.NewEncoder(w).Encode(updateData)
-
-	case "DELETE":
-		categories = append(categories[:index], categories[index+1:]...)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Category deleted successfully"})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
+type Config struct {
+	Port   string `mapstructure:"PORT"`
+	DBConn string `mapstructure:"DB_CONN"`
 }
 
 func main() {
-	http.HandleFunc("/categories", handleCategories)
-	http.HandleFunc("/categories/", handleCategoryByID)
-
-	fmt.Println("Server running at localhost:8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		fmt.Println("Failed to start server:", err)
+	viper.SetConfigFile(".env")
+	viper.AutomaticEnv()
+	if err := viper.ReadInConfig(); err != nil {
+		log.Println("No .env file found, using system env")
 	}
+
+	config := Config{
+		Port:   viper.GetString("PORT"),
+		DBConn: viper.GetString("DB_CONN"),
+	}
+
+	db, err := database.InitDB(config.DBConn)
+	if err != nil {
+		log.Fatal("Gagal koneksi database:", err)
+	}
+	defer db.Close()
+
+	categoryRepo := repositories.NewCategoryRepository(db)
+	categoryService := services.NewCategoryService(categoryRepo)
+	categoryHandler := handlers.NewCategoryHandler(categoryService)
+	productRepo := repositories.NewProductRepository(db)
+	productService := services.NewProductService(productRepo)
+	productHandler := handlers.NewProductHandler(productService)
+
+	http.HandleFunc("/categories", categoryHandler.HandleCategories)
+	http.HandleFunc("/categories/", categoryHandler.HandleCategoryByID)
+	http.HandleFunc("/api/produk", productHandler.HandleProducts)
+	http.HandleFunc("/api/produk/", productHandler.HandleProductByID)
+
+	fmt.Println("Server running di port", config.Port)
+	log.Fatal(http.ListenAndServe(":"+config.Port, nil))
 }
