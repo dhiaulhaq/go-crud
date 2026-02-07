@@ -14,15 +14,12 @@ func NewProductRepository(db *sql.DB) *ProductRepository {
 	return &ProductRepository{db: db}
 }
 
-// Create: Sekarang menyimpan category_id juga
 func (repo *ProductRepository) Create(product *models.Product) error {
 	query := "INSERT INTO products (name, price, stock, category_id) VALUES ($1, $2, $3, $4) RETURNING id"
 	err := repo.db.QueryRow(query, product.Name, product.Price, product.Stock, product.CategoryID).Scan(&product.ID)
 	return err
 }
 
-// GetByID: CHALLENGE JOIN IMPLEMENTATION
-// Kita mengambil data produk digabung dengan nama kategori
 func (repo *ProductRepository) GetByID(id int) (*models.Product, error) {
 	query := `
 		SELECT p.id, p.name, p.price, p.stock, p.category_id, c.name 
@@ -32,7 +29,7 @@ func (repo *ProductRepository) GetByID(id int) (*models.Product, error) {
 	`
 
 	var p models.Product
-	// Scan hasilnya ke struct Product, termasuk CategoryName
+
 	err := repo.db.QueryRow(query, id).Scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.CategoryID, &p.CategoryName)
 
 	if err == sql.ErrNoRows {
@@ -45,11 +42,16 @@ func (repo *ProductRepository) GetByID(id int) (*models.Product, error) {
 	return &p, nil
 }
 
-// GetAll, Update, Delete disesuaikan standard (kode disederhanakan agar fokus ke poin utama)
-func (repo *ProductRepository) GetAll() ([]models.Product, error) {
-	// Optional: Bisa di JOIN juga kalau mau list product ada nama kategorinya
+func (repo *ProductRepository) GetAll(nameFilter string) ([]models.Product, error) {
 	query := "SELECT id, name, price, stock, category_id FROM products"
-	rows, err := repo.db.Query(query)
+	args := []interface{}{}
+
+	if nameFilter != "" {
+		query += " WHERE name ILIKE $1"
+		args = append(args, "%"+nameFilter+"%")
+	}
+
+	rows, err := repo.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +60,9 @@ func (repo *ProductRepository) GetAll() ([]models.Product, error) {
 	var products []models.Product
 	for rows.Next() {
 		var p models.Product
-		rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.CategoryID)
+		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.CategoryID); err != nil {
+			return nil, err
+		}
 		products = append(products, p)
 	}
 	return products, nil

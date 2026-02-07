@@ -36,17 +36,32 @@ func main() {
 	}
 	defer db.Close()
 
+	// Category
 	categoryRepo := repositories.NewCategoryRepository(db)
 	categoryService := services.NewCategoryService(categoryRepo)
 	categoryHandler := handlers.NewCategoryHandler(categoryService)
+
+	// Product
 	productRepo := repositories.NewProductRepository(db)
 	productService := services.NewProductService(productRepo)
 	productHandler := handlers.NewProductHandler(productService)
 
+	// Transaction
+	transactionRepo := repositories.NewTransactionRepository(db)
+	transactionService := services.NewTransactionService(transactionRepo)
+	transactionHandler := handlers.NewTransactionHandler(transactionService)
+
+	// Category Routes
 	http.HandleFunc("/categories", categoryHandler.HandleCategories)
 	http.HandleFunc("/categories/", categoryHandler.HandleCategoryByID)
+
+	// Product Routes
 	http.HandleFunc("/api/produk", productHandler.HandleProducts)
 	http.HandleFunc("/api/produk/", productHandler.HandleProductByID)
+
+	// Transaction Routes
+	http.HandleFunc("/api/checkout", transactionHandler.HandleCheckout)
+	http.HandleFunc("/api/report", transactionHandler.HandleReport)
 
 	fmt.Println("Server running di port", config.Port)
 	log.Fatal(http.ListenAndServe(":"+config.Port, nil))
